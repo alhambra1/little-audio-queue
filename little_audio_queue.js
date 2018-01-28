@@ -33,35 +33,74 @@ function LittleAudioQueue(start=true, opts={}){
 	this._rawResults = {};
 	this._errorHistory = {};
 
-	this.audioElementFromArrayBuffer = function(arrayBuffer){
+	this.audioElementFromArrayBuffer = function(fileObj, arrayBuffer){
+		let onError = function(element){
+			element.removeEventListener('loadeddata', onLoadedData);
+			element.removeEventListener('error', onError);
+
+			if (queue._errorHistory[fileObj.src])
+				queue._errorHistory[fileObj.src].push('Error');
+			else
+				queue._errorHistory[fileObj.src] = ['Error'];
+
+			queue.error('LittleAudioQueue audioElementFromArrayBuffer error:', {file_obj: fileObj});
+
+			if (typeof queue.customEventCallbacks.fileload == 'function'){
+				var obj = {
+						title: 'LittleAudioQueue audioElementFromArrayBuffer Error',
+						message: 'Audio element readyState not 4 or contains a MediaError: readyState: ' + element.readyState + '; MediaError' + (element.error ? element.error.message : 'null'),
+						data: fileObj
+					};
+
+				queue.customEventCallbacks.error(obj);
+			}
+		};
+
+		let onLoadedData = function(element){
+			element.removeEventListener('loadeddata', onLoadedData);
+			element.removeEventListener('error', onError);
+
+			if (element.readyState == 4 && !element.error){
+				queue.pending[fileObj.src] = 0;
+				queue.determineCompletion();
+
+				// We need the raw arrayBuffer or blob to store in the IndexedDB
+				queue._rawResults[fileObj.src] = arrayBuffer;
+
+				queue._loadedResults[fileObj.src] = fileObj;
+
+				var obj = {
+						result: element,
+						item: fileObj
+					};
+
+				if (typeof queue.customEventCallbacks.fileload == 'function')
+					queue.customEventCallbacks.fileload(obj);
+
+			} else {
+				onError();
+			}
+		};
+
 		var element = document.createElement('audio'),
 			blob = new Blob([new Uint8Array(arrayBuffer)], { type: 'audio/mpeg'}),
 			URL = window.URL || window.webkitURL,
 			blobUrl = URL.createObjectURL(blob);
 
+		element.addEventListener('loadeddata', function(){
+			onLoadedData(element);
+		});
+
+		element.addEventListener('error', function(){
+			onError(element);
+		});
+
 		element.src = blobUrl;
-		return element;
 	}
 
 	this.eventCallbacks = {
 		fileload: function(fileObj, response){
-			queue.pending[fileObj.src] = 0;
-			queue.determineCompletion();
-
-			var element = queue.audioElementFromArrayBuffer(response);
-
-			// We need the raw arrayBuffer or blob to store in the IndexedDB
-			queue._rawResults[fileObj.src] = response;
-
-			queue._loadedResults[fileObj.src] = fileObj;
-
-			var obj = {
-					result: element,
-					item: fileObj
-				};
-
-			if (typeof queue.customEventCallbacks.fileload == 'function')
-				queue.customEventCallbacks.fileload(obj);
+			queue.audioElementFromArrayBuffer(fileObj, response);
 		},
 		error: function(fileObj, event){
 			delete queue.pending[fileObj.src];
