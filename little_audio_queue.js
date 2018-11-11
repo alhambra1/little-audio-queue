@@ -46,7 +46,6 @@ function LittleAudioQueue(start=true, opts={}){
 	this.eventCallbacks = {
 		fileload: function(fileObj, response){
 			queue.pending[fileObj.src] = 0;
-			queue.determineCompletion();
 
 			var element = queue.audioElementFromArrayBuffer(response);
 
@@ -62,6 +61,8 @@ function LittleAudioQueue(start=true, opts={}){
 
 			if (typeof queue.customEventCallbacks.fileload == 'function')
 				queue.customEventCallbacks.fileload(obj);
+
+			queue.determineCompletion();
 		},
 		error: function(fileObj, event){
 			delete queue.pending[fileObj.src];
